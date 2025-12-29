@@ -1,687 +1,242 @@
-print("Script started!") -- Confirm script execution
+print("Script Final - Full Persist v3") 
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local ToolName = "Diamond"
+local SLAP_POWER = 30000
+local TROLL_FULL_DELAY = 0.1
+local SPAWN_HITBOX_SIZE = 999
 
--- Anti-Lag Configuration
-local ATTACK_COOLDOWN = 0.02
-local TROLL_ATTACK_COOLDOWN = 0.001  -- Restored to extremely fast spam
-local MAX_HITBOX_SIZE = 1000
-local MIN_HITBOX_SIZE = 1
-local MAX_TROLL_RADIUS = 1000
-local MIN_TROLL_RADIUS = 1
-local SLAP_POWER = 10000
-local PLAYER_CACHE_UPDATE_INTERVAL = 1  -- Update player cache every 1 second to reduce lag
-local TROLL_MUSIC_DURATION = 5  -- Duration for troll music spam in seconds
-local TROLL_MUSIC_RADIUS = 1000  -- Radius to scan for players
-local TROLL_MUSIC_HITBOX_SIZE = 10  -- Small hitbox size for visual indicator
-local TROLL_PLAYER_HITBOX_SIZE = 10  -- Hitbox size for troll player
-local BUTTON_CENTER = Vector3.new(320.53, 57.54, 283.36) -- Centro da hitbox do botão
-local BUTTON_RADIUS = 6.00  -- Raio da hitbox do botão
+local TrollFullEnabled = false
+local Spamming = false
+local TrollSpamming = false
+local TrollPlayerSpamming = false
+local TrollButtonActive = false
 
--- Safe wait function
-local function safeWait(time)
-    local start = tick()
-    while tick() - start < time do
-        RunService.Heartbeat:Wait()
-    end
-end
+local hitboxSize = 15
+local trollRadius = 3
+local trollPlayerName = ""
+local TrollCenter = Vector3.new(320.10, 57.87, 283.55)
+local BUTTON_CENTER = Vector3.new(320.53, 57.54, 283.36)
+local BUTTON_RADIUS = 6.00
 
--- Load Rayfield with error handling
+local spawnVisuals = {}
+local hitboxIndicator = nil
+local trollHitboxIndicator = nil
+local trollPlayerHitboxIndicator = nil
+
 local success, Rayfield = pcall(function()
     return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 end)
 
-if not success or not Rayfield then
-    warn("Failed to load Rayfield library. Please check the URL or internet connection.")
-    return
-end
+if not success or not Rayfield then return end
 
 local Window = Rayfield:CreateWindow({
-    Name = "Universal Troll Script",
+    Name = "Universal Troll - Fix New Players",
     LoadingTitle = "Loading...",
-    LoadingSubtitle = "by WarningBot_Dead",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = nil,
-        FileName = "TrollConfig"
-    },
+    LoadingSubtitle = "By WarningBot_Dead",
+    ConfigurationSaving = {Enabled = true, FolderName = nil, FileName = "TrollConfig"},
     ToggleUIKeybind = "T",
 })
 
 local Tab = Window:CreateTab("Main")
 
-local Section = Tab:CreateSection("Troll System")
-
--- Variables
-local Spamming = false
-local TrollSpamming = false
-local TrollPlayerSpamming = false
-local TrollButtonActive = false
-local hitboxSize = 10
-local trollRadius = 9
-local hitboxIndicator = nil
-local trollHitboxIndicator = nil
-local trollPlayerHitboxIndicator = nil
-local trollPlayerName = ""
-local cachedPlayers = {}
-local hitboxConnection
-local lastCacheUpdate = 0
-
-local TrollCenter = Vector3.new(320.10, 57.87, 283.55)
-local ToolName = "Diamond"
-local ExcludedPlayers = {"Yal_Demoniac", "Medus4_X3r5"}
-local BoomboxName = "BoomBox"  -- Updated to correct name
-
--- Function to check if Diamond is in inventory
 local function hasDiamond()
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack and backpack:FindFirstChild(ToolName) then
-        return true
-    end
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild(ToolName) then
-        return true
-    end
-    return false
-end
-
--- Function to equip tool
-local function equipTool(toolName)
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        local tool = backpack:FindFirstChild(toolName)
-        if tool and tool:IsA("Tool") then
-            tool.Parent = LocalPlayer.Character
-            print("Equipped " .. toolName)
-        end
-    end
-end
-
--- Function to unequip tool
-local function unequipTool(toolName)
-    local character = LocalPlayer.Character
-    if character then
-        local tool = character:FindFirstChild(toolName)
-        if tool and tool:IsA("Tool") then
-            tool.Parent = LocalPlayer.Backpack
-            print("Unequipped " .. toolName)
-        end
-    end
-end
-
--- Check if tool is equipped
-local function isToolEquipped(toolName)
-    local character = LocalPlayer.Character
-    if character then
-        local tool = character:FindFirstChild(toolName)
-        return tool and tool:IsA("Tool")
-    end
-    return false
-end
-
--- Create Visual Hitbox
-local function createHitbox()
-    if hitboxIndicator then
-        pcall(function() hitboxIndicator:Destroy() end)
-        hitboxIndicator = nil
-    end
-    local success, err = pcall(function()
-        hitboxIndicator = Instance.new("Part")
-        hitboxIndicator.Name = "TrollHitbox"
-        hitboxIndicator.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
-        hitboxIndicator.Anchored = true
-        hitboxIndicator.CanCollide = false
-        hitboxIndicator.Transparency = 0.5
-        hitboxIndicator.Color = Color3.fromRGB(150, 100, 255)
-        hitboxIndicator.Material = Enum.Material.ForceField
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            hitboxIndicator.Position = LocalPlayer.Character.HumanoidRootPart.Position
-        end
-        hitboxIndicator.Parent = workspace
-        print("Hitbox created successfully")
-    end)
-    if not success then
-        print("Error creating hitbox: " .. tostring(err))
-    end
-end
-
--- Create Troll Hitbox
-local function createTrollHitbox()
-    if trollHitboxIndicator then
-        pcall(function() trollHitboxIndicator:Destroy() end)
-        trollHitboxIndicator = nil
-    end
-    local success, err = pcall(function()
-        trollHitboxIndicator = Instance.new("Part")
-        trollHitboxIndicator.Name = "TrollHitboxFixed"
-        trollHitboxIndicator.Size = Vector3.new(trollRadius * 2, trollRadius * 2, trollRadius * 2)
-        trollHitboxIndicator.Anchored = true
-        trollHitboxIndicator.CanCollide = false
-        trollHitboxIndicator.Transparency = 0.5
-        trollHitboxIndicator.Color = Color3.fromRGB(255, 100, 100)
-        trollHitboxIndicator.Material = Enum.Material.ForceField
-        trollHitboxIndicator.Position = TrollCenter
-        trollHitboxIndicator.Parent = workspace
-        print("Troll hitbox created successfully")
-    end)
-    if not success then
-        print("Error creating troll hitbox: " .. tostring(err))
-    end
-end
-
--- Create Troll Player Hitbox
-local function createTrollPlayerHitbox(targetPlayer)
-    if trollPlayerHitboxIndicator then
-        pcall(function() trollPlayerHitboxIndicator:Destroy() end)
-        trollPlayerHitboxIndicator = nil
-    end
-    local success, err = pcall(function()
-        trollPlayerHitboxIndicator = Instance.new("Part")
-        trollPlayerHitboxIndicator.Name = "TrollPlayerHitbox"
-        trollPlayerHitboxIndicator.Size = Vector3.new(TROLL_PLAYER_HITBOX_SIZE, TROLL_PLAYER_HITBOX_SIZE, TROLL_PLAYER_HITBOX_SIZE)
-        trollPlayerHitboxIndicator.Anchored = true
-        trollPlayerHitboxIndicator.CanCollide = false
-        trollPlayerHitboxIndicator.Transparency = 0.5
-        trollPlayerHitboxIndicator.Color = Color3.fromRGB(255, 0, 0)
-        trollPlayerHitboxIndicator.Material = Enum.Material.ForceField
-        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if targetRoot then
-            trollPlayerHitboxIndicator.Position = targetRoot.Position
-        end
-        trollPlayerHitboxIndicator.Parent = workspace
-        print("Troll player hitbox created successfully")
-    end)
-    if not success then
-        print("Error creating troll player hitbox: " .. tostring(err))
-    end
-end
-
--- Update Hitbox Size
-local function updateHitboxSize()
-    if not Spamming or not hitboxIndicator then
-        return
-    end
-    pcall(function()
-        hitboxIndicator.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
-        print("Hitbox size updated: " .. hitboxSize)
-    end)
-end
-
--- Update Troll Hitbox Radius
-local function updateTrollHitboxRadius()
-    if not TrollSpamming or not trollHitboxIndicator then
-        return
-    end
-    pcall(function()
-        trollHitboxIndicator.Size = Vector3.new(trollRadius * 2, trollRadius * 2, trollRadius * 2)
-        print("Troll hitbox radius updated: " .. trollRadius)
-    end)
-end
-
--- Cache Players for Performance
-local function updatePlayerCache()
-    cachedPlayers = {}
-    pcall(function()
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                table.insert(cachedPlayers, player)
-            end
-        end
-        print("Player cache updated: " .. #cachedPlayers .. " players")
-    end)
-end
-
--- Detect Attack Remote
-local function getAttackRemote()
+    local bp = LocalPlayer:FindFirstChild("Backpack")
     local char = LocalPlayer.Character
-    if char then
-        local success, result = pcall(function()
-            for _, tool in pairs(char:GetChildren()) do
-                if tool:IsA("Tool") and tool:FindFirstChild("Event") then
-                    return tool.Event
-                end
-            end
+    return (bp and bp:FindFirstChild(ToolName)) or (char and char:FindFirstChild(ToolName))
+end
+
+local function equipTool()
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp and bp:FindFirstChild(ToolName) then
+        bp[ToolName].Parent = LocalPlayer.Character
+    end
+end
+
+local function slap(targetChar)
+    if not targetChar then return end
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(ToolName)
+    local remote = tool and tool:FindFirstChild("Event")
+    local root = targetChar:FindFirstChild("HumanoidRootPart")
+    
+    if remote and root then
+        pcall(function()
+            remote:FireServer("slash", targetChar, root.Position, Vector3.new(0, SLAP_POWER, 0))
         end)
-        if success and result then
-            print("Attack remote found")
-            return result
-        else
-            print("No attack remote found")
-        end
     end
-    return nil
 end
 
--- Remote Fire Logic for Main Hitbox
-local function triggerHitbox()
-    print("TriggerHitbox started")
-    local remote = getAttackRemote()  -- Cache remote if possible, but recheck if nil
-    while Spamming do
-        if not remote then
-            remote = getAttackRemote()
-        end
-        local rootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if rootPart and remote then
-            local currentTime = tick()
-            if currentTime - lastCacheUpdate >= PLAYER_CACHE_UPDATE_INTERVAL then
-                updatePlayerCache()
-                lastCacheUpdate = currentTime
+local function updateSpawnVisuals()
+    for _, v in pairs(spawnVisuals) do v:Destroy() end
+    spawnVisuals = {}
+    if TrollFullEnabled then
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("SpawnLocation") then
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(SPAWN_HITBOX_SIZE, SPAWN_HITBOX_SIZE, SPAWN_HITBOX_SIZE)
+                p.Position = obj.Position
+                p.Anchored, p.CanCollide, p.Transparency = true, false, 0.8
+                p.Color, p.Material = Color3.fromRGB(255, 0, 0), Enum.Material.ForceField
+                p.Parent = Workspace
+                table.insert(spawnVisuals, p)
             end
-            for _, player in pairs(cachedPlayers) do
-                local targetPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if targetPart then
-                    local distance = (targetPart.Position - rootPart.Position).Magnitude
-                    if distance <= hitboxSize then
-                        coroutine.wrap(function()
-                            pcall(function()
-                                remote:FireServer("slash", player.Character, targetPart.Position, Vector3.new(0, SLAP_POWER, 0))
-                                if targetPart:FindFirstChild("BodyVelocity") == nil then  -- Fixed check
-                                    local bodyVelocity = Instance.new("BodyVelocity")
-                                    bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-                                    bodyVelocity.Velocity = Vector3.new(0, SLAP_POWER, 0)
-                                    bodyVelocity.Parent = targetPart
-                                    game.Debris:AddItem(bodyVelocity, 0.5)
-                                    print("Applied slap to " .. player.Name)
-                                end
-                            end)
-                        end)()
+        end
+    end
+end
+
+-- Troll FULL Loop (Constant Scan)
+task.spawn(function()
+    while true do
+        if TrollFullEnabled then
+            if hasDiamond() then
+                if not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(ToolName)) then
+                    equipTool()
+                end
+                -- Gets EVERYONE currently in the server every loop
+                for _, pl in pairs(Players:GetPlayers()) do
+                    if pl ~= LocalPlayer and pl.Character then
+                        slap(pl.Character)
                     end
                 end
             end
-        else
-            print("No rootPart or remote found")
         end
-        safeWait(ATTACK_COOLDOWN)
+        task.wait(TROLL_FULL_DELAY)
     end
-    print("TriggerHitbox stopped")
-end
+end)
 
--- Remote Fire Logic for Troll Hitbox
-local function triggerTrollHitbox()
-    print("TriggerTrollHitbox started")
-    local remote = getAttackRemote()  -- Cache remote if possible, but recheck if nil
-    while TrollSpamming do
-        if not isToolEquipped(ToolName) then
-            safeWait(TROLL_ATTACK_COOLDOWN)
-            continue
-        end
-        if not remote then
-            remote = getAttackRemote()
-        end
-        if remote then
-            local currentTime = tick()
-            if currentTime - lastCacheUpdate >= PLAYER_CACHE_UPDATE_INTERVAL then
-                updatePlayerCache()
-                lastCacheUpdate = currentTime
-            end
-            for _, player in pairs(cachedPlayers) do
-                local targetPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                if targetPart then
-                    local distance = (targetPart.Position - TrollCenter).Magnitude
-                    if distance <= trollRadius then
-                        coroutine.wrap(function()
-                            pcall(function()
-                                remote:FireServer("slash", player.Character, targetPart.Position, Vector3.new(0, SLAP_POWER, 0))
-                                if targetPart:FindFirstChild("BodyVelocity") == nil then  -- Fixed check
-                                    local bodyVelocity = Instance.new("BodyVelocity")
-                                    bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-                                    bodyVelocity.Velocity = Vector3.new(0, SLAP_POWER, 0)
-                                    bodyVelocity.Parent = targetPart
-                                    game.Debris:AddItem(bodyVelocity, 0.5)
-                                    print("Applied slap to " .. player.Name .. " in troll hitbox")
-                                end
-                            end)
-                        end)()
+-- Other Hitboxes Loop
+task.spawn(function()
+    while true do
+        if not TrollFullEnabled then
+            if Spamming then
+                local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if myRoot then
+                    if hitboxIndicator then hitboxIndicator.Position = myRoot.Position end
+                    for _, pl in pairs(Players:GetPlayers()) do
+                        if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                            if (pl.Character.HumanoidRootPart.Position - myRoot.Position).Magnitude <= hitboxSize then
+                                slap(pl.Character)
+                            end
+                        end
                     end
                 end
-            end
-        else
-            print("No remote found")
-        end
-        safeWait(TROLL_ATTACK_COOLDOWN)
-    end
-    print("TriggerTrollHitbox stopped")
-end
-
--- Remote Fire Logic for Troll Player
-local function triggerTrollPlayer(targetPlayer)
-    print("TriggerTrollPlayer started for " .. targetPlayer.Name)
-    local remote = getAttackRemote()
-    while TrollPlayerSpamming do
-        if not isToolEquipped(ToolName) then
-            safeWait(TROLL_ATTACK_COOLDOWN)
-            continue
-        end
-        if not remote then
-            remote = getAttackRemote()
-        end
-        if remote and targetPlayer.Character then
-            local targetPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if targetPart then
-                if trollPlayerHitboxIndicator then
-                    trollPlayerHitboxIndicator.Position = targetPart.Position
-                end
-                coroutine.wrap(function()
-                    pcall(function()
-                        remote:FireServer("slash", targetPlayer.Character, targetPart.Position, Vector3.new(0, SLAP_POWER, 0))
-                        if targetPart:FindFirstChild("BodyVelocity") == nil then
-                            local bodyVelocity = Instance.new("BodyVelocity")
-                            bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-                            bodyVelocity.Velocity = Vector3.new(0, SLAP_POWER, 0)
-                            bodyVelocity.Parent = targetPart
-                            game.Debris:AddItem(bodyVelocity, 0.5)
-                            print("Applied slap to " .. targetPlayer.Name .. " in troll player")
+            elseif TrollSpamming then
+                for _, pl in pairs(Players:GetPlayers()) do
+                    if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                        if (pl.Character.HumanoidRootPart.Position - TrollCenter).Magnitude <= trollRadius then
+                            slap(pl.Character)
                         end
-                    end)
-                end)()
-            end
-        else
-            print("No remote or target part found for troll player")
-        end
-        safeWait(TROLL_ATTACK_COOLDOWN)
-    end
-    print("TriggerTrollPlayer stopped")
-end
-
--- Function to create region
-local function criarRegiao(centro, raio)
-    return Region3.new(
-        centro - Vector3.new(raio, raio, raio),
-        centro + Vector3.new(raio, raio, raio)
-    )
-end
-
--- Function for Troll Music
-local function trollMusic()
-    if not hasDiamond() then
-        print("Item 'Diamond' not found in inventory. Troll Music cannot function.")
-        return
-    end
-    print("Troll Music activated")
-    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not myRoot then
-        print("No local player root part found")
-        return
-    end
-
-    local targets = {}
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and not table.find(ExcludedPlayers, player.Name) then
-            local character = player.Character
-            local targetRoot = character and character:FindFirstChild("HumanoidRootPart")
-            if targetRoot and character:FindFirstChild(BoomboxName) and character[BoomboxName]:IsA("Tool") then
-                local distance = (targetRoot.Position - myRoot.Position).Magnitude
-                if distance <= TROLL_MUSIC_RADIUS then
-                    table.insert(targets, player)
-                    print("Found target for Troll Music: " .. player.Name)
+                    end
+                end
+            elseif TrollPlayerSpamming and trollPlayerName ~= "" then
+                local target = Players:FindFirstChild(trollPlayerName)
+                if target and target.Character then
+                    if trollPlayerHitboxIndicator then trollPlayerHitboxIndicator.Position = target.Character.HumanoidRootPart.Position end
+                    slap(target.Character)
                 end
             end
         end
+        task.wait(0.1)
     end
+end)
 
-    if #targets == 0 then
-        print("No valid targets for Troll Music")
-        return
-    end
-
-    equipTool(ToolName)
-    local remote = getAttackRemote()
-    if not remote then
-        print("No attack remote found for Troll Music")
-        unequipTool(ToolName)
-        return
-    end
-
-    local hitboxes = {}
-    for _, target in pairs(targets) do
-        local targetHitbox = Instance.new("Part")
-        targetHitbox.Name = "TrollMusicHitbox"
-        targetHitbox.Size = Vector3.new(TROLL_MUSIC_HITBOX_SIZE, TROLL_MUSIC_HITBOX_SIZE, TROLL_MUSIC_HITBOX_SIZE)
-        targetHitbox.Anchored = true
-        targetHitbox.CanCollide = false
-        targetHitbox.Transparency = 0.5
-        targetHitbox.Color = Color3.fromRGB(255, 0, 0)
-        targetHitbox.Material = Enum.Material.ForceField
-        local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if targetRoot then
-            targetHitbox.Position = targetRoot.Position
-        end
-        targetHitbox.Parent = workspace
-        table.insert(hitboxes, targetHitbox)
-
-        coroutine.wrap(function()
-            local startTime = tick()
-            while tick() - startTime < TROLL_MUSIC_DURATION do
-                local targetPart = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-                if targetPart then
-                    targetHitbox.Position = targetPart.Position
-                    pcall(function()
-                        remote:FireServer("slash", target.Character, targetPart.Position, Vector3.new(0, SLAP_POWER, 0))
-                        if targetPart:FindFirstChild("BodyVelocity") == nil then
-                            local bodyVelocity = Instance.new("BodyVelocity")
-                            bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-                            bodyVelocity.Velocity = Vector3.new(0, SLAP_POWER, 0)
-                            bodyVelocity.Parent = targetPart
-                            game.Debris:AddItem(bodyVelocity, 0.5)
-                            print("Applied slap to " .. target.Name .. " during Troll Music")
-                        end
-                    end)
-                end
-                safeWait(TROLL_ATTACK_COOLDOWN)
-            end
-            targetHitbox:Destroy()
-            print("Troll Music spam stopped for " .. target.Name)
-        end)()
-    end
-
-    -- Unequip after duration
-    task.delay(TROLL_MUSIC_DURATION, function()
-        unequipTool(ToolName)
-        print("Unequipped Diamond after Troll Music")
-    end)
-end
-
--- Toggle for Main Troll System
 Tab:CreateToggle({
-    Name = "Activate Troll System",
+    Name = "Troll FULL (Spawn + Server + New Players)",
+    CurrentValue = false,
+    Flag = "TrollFull",
+    Callback = function(Value)
+        TrollFullEnabled = Value
+        updateSpawnVisuals()
+        if not Value then for _, v in pairs(spawnVisuals) do v:Destroy() end spawnVisuals = {} end
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "Activate Troll System (Self)",
     CurrentValue = false,
     Flag = "Spamming",
     Callback = function(Value)
         Spamming = Value
-        if Spamming then
-            createHitbox()
-            hitboxConnection = RunService.Heartbeat:Connect(function()
-                if hitboxIndicator and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    hitboxIndicator.Position = LocalPlayer.Character.HumanoidRootPart.Position
-                end
-            end)
-            lastCacheUpdate = 0  -- Reset cache timer
-            coroutine.wrap(triggerHitbox)()
-            print("Troll system activated")
-        else
-            if hitboxIndicator then
-                pcall(function() hitboxIndicator:Destroy() end)
-                hitboxIndicator = nil
-            end
-            if hitboxConnection then
-                hitboxConnection:Disconnect()
-                hitboxConnection = nil
-            end
-            print("Troll system deactivated")
-        end
+        if Value then
+            hitboxIndicator = Instance.new("Part", Workspace)
+            hitboxIndicator.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+            hitboxIndicator.Anchored, hitboxIndicator.CanCollide, hitboxIndicator.Transparency = true, false, 0.7
+            hitboxIndicator.Color, hitboxIndicator.Material = Color3.fromRGB(150, 100, 255), Enum.Material.ForceField
+        elseif hitboxIndicator then hitboxIndicator:Destroy() end
     end,
 })
 
--- Input for Hitbox Size
 Tab:CreateInput({
-    Name = "Set Hitbox Size",
-    PlaceholderText = "Enter size (1-1000)",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        local value = tonumber(Text)
-        if value then
-            hitboxSize = math.clamp(value, MIN_HITBOX_SIZE, MAX_HITBOX_SIZE)
-            updateHitboxSize()
-            print("Hitbox size set to " .. hitboxSize)
-        else
-            warn("Invalid input for hitbox size")
-        end
-    end,
+    Name = "Aura Size",
+    PlaceholderText = "15",
+    Callback = function(Text) hitboxSize = tonumber(Text) or 15 end,
 })
 
-local TrollSection = Tab:CreateSection("Hitbox dos Troll")
-
--- Toggle for Hitbox dos Troll
 Tab:CreateToggle({
-    Name = "Activate Hitbox dos Troll",
+    Name = "Hitbox Troll (Fixed)",
     CurrentValue = false,
     Flag = "TrollSpamming",
     Callback = function(Value)
         TrollSpamming = Value
-        if TrollSpamming then
-            equipTool(ToolName)
-            createTrollHitbox()
-            lastCacheUpdate = 0  -- Reset cache timer
-            coroutine.wrap(triggerTrollHitbox)()
-            print("Troll hitbox activated")
-        else
-            unequipTool(ToolName)
-            if trollHitboxIndicator then
-                pcall(function() trollHitboxIndicator:Destroy() end)
-                trollHitboxIndicator = nil
-            end
-            print("Troll hitbox deactivated")
-        end
+        if Value then
+            trollHitboxIndicator = Instance.new("Part", Workspace)
+            trollHitboxIndicator.Size = Vector3.new(trollRadius*2, trollRadius*2, trollRadius*2)
+            trollHitboxIndicator.Position, trollHitboxIndicator.Anchored, trollHitboxIndicator.CanCollide = TrollCenter, true, false
+            trollHitboxIndicator.Transparency, trollHitboxIndicator.Color = 0.7, Color3.fromRGB(255, 100, 100)
+            trollHitboxIndicator.Material = Enum.Material.ForceField
+        elseif trollHitboxIndicator then trollHitboxIndicator:Destroy() end
     end,
 })
 
--- Input for Troll Hitbox Radius
 Tab:CreateInput({
-    Name = "Set Troll Hitbox Radius",
-    PlaceholderText = "Enter radius (1-1000)",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        local value = tonumber(Text)
-        if value then
-            trollRadius = math.clamp(value, MIN_TROLL_RADIUS, MAX_TROLL_RADIUS)
-            updateTrollHitboxRadius()
-            print("Troll hitbox radius set to " .. trollRadius)
-        else
-            warn("Invalid input for troll radius")
-        end
-    end,
+    Name = "Target Name",
+    PlaceholderText = "Username",
+    Callback = function(Text) trollPlayerName = Text end,
 })
 
--- Button for Troll Music
-Tab:CreateButton({
-    Name = "Troll Music",
-    Callback = function()
-        trollMusic()
-    end,
-})
-
--- Section for Troll Player
-local TrollPlayerSection = Tab:CreateSection("Troll Player")
-
--- Input for Target Player Name
-Tab:CreateInput({
-    Name = "Target Player Name",
-    PlaceholderText = "Enter player username",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        trollPlayerName = Text
-        print("Target player set to: " .. trollPlayerName)
-    end,
-})
-
--- Toggle for Troll Player
 Tab:CreateToggle({
-    Name = "Activate Troll Player",
+    Name = "Focus Target",
     CurrentValue = false,
-    Flag = "TrollPlayerSpamming",
+    Flag = "TrollPlayer",
     Callback = function(Value)
         TrollPlayerSpamming = Value
-        if TrollPlayerSpamming then
-            local targetPlayer = Players:FindFirstChild(trollPlayerName)
-            if targetPlayer then
-                equipTool(ToolName)
-                createTrollPlayerHitbox(targetPlayer)
-                coroutine.wrap(function() triggerTrollPlayer(targetPlayer) end)()
-                print("Troll player activated for " .. trollPlayerName)
-            else
-                warn("Player " .. trollPlayerName .. " not found")
-                TrollPlayerSpamming = false
-            end
-        else
-            unequipTool(ToolName)
-            if trollPlayerHitboxIndicator then
-                pcall(function() trollPlayerHitboxIndicator:Destroy() end)
-                trollPlayerHitboxIndicator = nil
-            end
-            print("Troll player deactivated")
-        end
+        if Value then
+            trollPlayerHitboxIndicator = Instance.new("Part", Workspace)
+            trollPlayerHitboxIndicator.Size = Vector3.new(10,10,10)
+            trollPlayerHitboxIndicator.Anchored, trollPlayerHitboxIndicator.CanCollide, trollPlayerHitboxIndicator.Transparency = true, false, 0.7
+            trollPlayerHitboxIndicator.Color = Color3.fromRGB(255,0,0)
+        elseif trollPlayerHitboxIndicator then trollPlayerHitboxIndicator:Destroy() end
     end,
 })
 
--- Section for Troll Button
-local TrollButtonSection = Tab:CreateSection("Troll Button")
-
--- Toggle for Activate Button
 Tab:CreateToggle({
-    Name = "Activate Button",
+    Name = "Troll Button Auto",
     CurrentValue = false,
-    Flag = "TrollButtonActive",
     Callback = function(Value)
         TrollButtonActive = Value
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then
-            warn("HRP not found")
-            TrollButtonActive = false
-            return
-        end
-        local region = Region3.new(BUTTON_CENTER - Vector3.new(BUTTON_RADIUS, BUTTON_RADIUS, BUTTON_RADIUS), BUTTON_CENTER + Vector3.new(BUTTON_RADIUS, BUTTON_RADIUS, BUTTON_RADIUS))
-        local partes = workspace:FindPartsInRegion3(region, nil, math.huge)
-        if Value then
-            for _, parte in pairs(partes) do
-                if parte:IsA("BasePart") then
-                    firetouchinterest(hrp, parte, 0)
-                    print("Button pressed on " .. parte.Name)
+        task.spawn(function()
+            while TrollButtonActive do
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local region = Region3.new(BUTTON_CENTER - Vector3.new(BUTTON_RADIUS, BUTTON_RADIUS, BUTTON_RADIUS), BUTTON_CENTER + Vector3.new(BUTTON_RADIUS, BUTTON_RADIUS, BUTTON_RADIUS))
+                    for _, p in pairs(Workspace:FindPartsInRegion3(region, nil, 100)) do
+                        firetouchinterest(hrp, p, 0)
+                        firetouchinterest(hrp, p, 1)
+                    end
                 end
+                task.wait(0.2)
             end
-        else
-            for _, parte in pairs(partes) do
-                if parte:IsA("BasePart") then
-                    firetouchinterest(hrp, parte, 1)
-                    print("Button released on " .. parte.Name)
-                end
-            end
-        end
+        end)
     end,
 })
 
--- Cleanup on Script End
-game:BindToClose(function()
-    if hitboxIndicator then
-        pcall(function() hitboxIndicator:Destroy() end)
-        print("Hitbox cleaned up")
-    end
-    if trollHitboxIndicator then
-        pcall(function() trollHitboxIndicator:Destroy() end)
-        print("Troll hitbox cleaned up")
-    end
-    if trollPlayerHitboxIndicator then
-        pcall(function() trollPlayerHitboxIndicator:Destroy() end)
-        print("Troll player hitbox cleaned up")
-    end
-    if hitboxConnection then
-        pcall(function() hitboxConnection:Disconnect() end)
-        print("Heartbeat connection disconnected")
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    if TrollFullEnabled or Spamming or TrollSpamming or TrollPlayerSpamming then
+        if hasDiamond() then equipTool() end
     end
 end)
-
-print("Script initialization complete!")
